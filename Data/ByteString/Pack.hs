@@ -14,8 +14,8 @@ module Data.ByteString.Pack
       -- * Operations
       -- ** put
     , putStorable
-    , putListOfStorable
     , putByteString
+    , fillList
     , fillUpWith
       -- ** skip
     , skip
@@ -24,13 +24,13 @@ module Data.ByteString.Pack
 
 import Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Internal as B
 import Control.Applicative
-import Control.Monad
-import Control.Monad.IO.Class
 import Data.Word
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Ptr
 import Foreign.Storable
+import System.IO.Unsafe (unsafePerformIO)
 
 -- A little cache to update the data
 data Cache = Cache {-# UNPACK #-} !(Ptr Word8) -- pointer in the bytestring
@@ -45,7 +45,6 @@ instance Show Cache where
 -- * PackerMore a cache -> a temporary 
 data Result a =
       PackerMore a Cache
-    | PackerFull
     | PackerFail String
   deriving (Show)
 
@@ -63,20 +62,11 @@ instance Monad Packer where
     return = returnPacker
     (>>=) = bindPacker
 
-instance MonadIO Packer where
-    liftIO = liftPacker
-
-liftPacker :: IO a -> Packer a
-liftPacker f = Packer $ \cache -> do
-    value <- f
-    return $ PackerMore value cache
-
 fmapPacker :: (a -> b) -> Packer a -> Packer b
 fmapPacker f p = Packer $ \cache -> do
     rv <- runPacker_ p cache
     return $ case rv of
         PackerMore v cache' -> PackerMore (f v) cache'
-        PackerFull          -> PackerFull
         PackerFail err      -> PackerFail err
 
 returnPacker :: a -> Packer a
@@ -87,26 +77,28 @@ bindPacker p fp = Packer $ \cache -> do
     rv <- runPacker_ p cache
     case rv of
         PackerMore v cache' -> runPacker_ (fp v) cache'
-        PackerFull          -> return $ PackerFull
         PackerFail err      -> return $ PackerFail err
 
 appendPacker :: Packer (a -> b) -> Packer a -> Packer b
 appendPacker p1f p2 = p1f >>= \p1 -> p2 >>= \v -> return (p1 v)
 
-pack :: Packer a -> ByteString -> IO (Result a)
-pack p (PS fptr off max) =
-    withForeignPtr fptr $ \ptr ->
-        runPacker_ p (Cache (ptr `plusPtr` off) (max - off))
+-- | pack the given packer into the given bytestring
+pack :: Packer a -> Int -> Either String ByteString
+pack p len =
+    unsafePerformIO $ do
+        fptr <- B.mallocByteString len
+        val <- withForeignPtr fptr $ \ptr ->
+                    runPacker_ p (Cache ptr len)
+        return $ case val of
+            PackerMore _ (Cache _ r) -> Right (PS fptr 0 (len - r))
+            PackerFail err           -> Left err
 
 -- run a sized action
 actionPacker :: Int -> (Ptr Word8 -> IO a) -> Packer a
-actionPacker s action = Packer $ \(Cache ptr size) -> do
+actionPacker s action = Packer $ \(Cache ptr size) ->
     case compare size s of
         LT -> return $ PackerFail "Not enough space in destination"
-        EQ -> do
-            v <- action ptr
-            return PackerFull
-        GT -> do
+        _  -> do
             v <- action ptr
             return $ PackerMore v (Cache (ptr `plusPtr` s) (size - s))
 
@@ -114,16 +106,22 @@ actionPacker s action = Packer $ \(Cache ptr size) -> do
 putStorable :: Storable storable => storable -> Packer ()
 putStorable s = actionPacker (sizeOf s) (\ptr -> poke (castPtr ptr) s)
 
+
 -- | put a Bytestring from the current position in the stream
 --
 -- If the ByteString ins null, then do nothing
 putByteString :: ByteString -> Packer ()
-putByteString = putListOfStorable . B.unpack
+putByteString bs
+    | neededLength == 0 = return ()
+    | otherwise         = actionPacker neededLength (actionPackerByteString bs)
+  where
+    neededLength :: Int
+    neededLength = B.length bs
 
--- | put a list of Storable
-putListOfStorable :: Storable a => [a] -> Packer ()
-putListOfStorable []     = return ()
-putListOfStorable (x:xs) = putStorable x >> putListOfStorable xs
+    actionPackerByteString :: ByteString -> Ptr Word8 -> IO ()
+    actionPackerByteString (PS fptr off _) ptr =
+        withForeignPtr fptr $ \srcptr ->
+            B.memcpy ptr (srcptr `plusPtr` off) neededLength
 
 -- | skip some bytes from the current position in the stream
 skip :: Int -> Packer ()
@@ -133,6 +131,25 @@ skip n = actionPacker n (\_ -> return ())
 skipStorable :: Storable storable => storable -> Packer ()
 skipStorable = skip . sizeOf
 
--- | fill up from the current position in the stream to then end
+-- | fill up from the current position in the stream to the end
+--
+-- it is basically:
+-- > fillUpWith s == fillList (repeat s)
 fillUpWith :: Storable storable => storable -> Packer ()
-fillUpWith s = putListOfStorable $ repeat s
+fillUpWith s = fillList $ repeat s
+
+-- | Will put the given storable list from the current position in the stream
+-- to the end.
+--
+-- This function will fail with not enough storage if the given storable can't
+-- be written (not enough space)
+--
+-- example:
+-- > pack (fillList $ [1..] :: Word8) 9    ==> "\1\2\3\4\5\6\7\8\9"
+-- > pack (fillList $ [1..] :: Word32) 4   ==> "\1\0\0\0"
+-- > pack (fillList $ [1..] :: Word32) 64  -- will work
+-- > pack (fillList $ [1..] :: Word32) 1   -- will fail (not enough space)
+-- > pack (fillList $ [1..] :: Word32) 131 -- will fail (not enough space)
+fillList :: Storable storable => [storable] -> Packer ()
+fillList []     = return ()
+fillList (x:xs) = putStorable x >> fillList xs
