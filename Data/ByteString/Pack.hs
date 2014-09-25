@@ -7,6 +7,7 @@
 -- Stability   : experimental
 -- Portability : unknown
 --
+-- Simple ByteString packer
 module Data.ByteString.Pack
     ( Packer
     , Result(..)
@@ -17,15 +18,18 @@ module Data.ByteString.Pack
     , putByteString
     , fillList
     , fillUpWith
+    , putWord8
+    , putWord16
+    , putWord32
       -- ** skip
     , skip
     , skipStorable
     ) where
 
+import Control.Applicative
 import Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as B
-import Control.Applicative
 import Data.Word
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Ptr
@@ -153,3 +157,21 @@ fillUpWith s = fillList $ repeat s
 fillList :: Storable storable => [storable] -> Packer ()
 fillList []     = return ()
 fillList (x:xs) = putStorable x >> fillList xs
+
+------------------------------------------------------------------------------
+-- Common packer                                                            --
+------------------------------------------------------------------------------
+
+-- | put Word8 in the current position in the stream
+putWord8 :: Word8 -> Packer ()
+putWord8 = putStorable
+
+-- | put Word16 in the current position in the stream
+-- /!\ use Host Endianness
+putWord16 :: Word16 -> Packer ()
+putWord16 = putStorable
+
+-- | put Word32 in the current position in the stream
+-- /!\ use Host Endianness
+putWord32 :: Word32 -> Packer ()
+putWord32 = putStorable
