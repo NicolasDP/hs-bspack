@@ -5,4 +5,4 @@ bspack
 [![Haskell](http://b.repl.ca/v1/language-haskell-lightgrey.png)](http://haskell.org)
 
 
-Documentation: [bsparse on hackage](http://hackage.haskell.org/package/bspack)
+Documentation: [bspack on hackage](http://hackage.haskell.org/package/bspack)
