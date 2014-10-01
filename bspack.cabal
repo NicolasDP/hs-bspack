@@ -10,19 +10,19 @@ license:             BSD3
 license-file:        LICENSE
 author:              Nicolas DI PRIMA
 maintainer:          nicolas@di-prima.fr
--- copyright:           
+copyright:           Copyright © 2014 Nicolas DI PRIMA
 category:            Data
 build-type:          Simple
--- extra-source-files:  
 cabal-version:       >=1.10
 
 library
   exposed-modules:     Data.ByteString.Pack
-  -- other-modules:       
+                     , Data.ByteString.Pack.Base32
+  other-modules:       Data.ByteString.Pack.Internal
   -- other-extensions:    
   build-depends:       base == 4.*
-                     , bytestring 
-  -- hs-source-dirs:      
+                     , bytestring
+                     , ghc-prim
   default-language:    Haskell2010
   ghc-options:         -Wall -fno-warn-orphans -O2
 

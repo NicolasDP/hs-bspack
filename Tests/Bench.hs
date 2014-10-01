@@ -13,6 +13,8 @@ module Main (main) where
 import Criterion.Main
 
 import Data.ByteString.Pack
+import Data.ByteString.Pack.Base32
+import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Builder as B
 import Data.Word
@@ -26,6 +28,7 @@ main = defaultMain
     [ bgroup "just fill up with the same char" benchFillUpWith
     , bgroup "write a bytestring" benchWriteByteString
     , bgroup "write byte and bytestring" benchConcatBytes
+    , bgroup "base32" benchBase32
     ]
 
 benchFillUpWith =
@@ -73,4 +76,11 @@ benchConcatBytes =
     , bench "blaze lazy"  $ nf (Blaze.toLazyByteString) concatBlazeLong
     , bench "blaze long"  $ whnf (Blaze.toByteString) concatBlazeLong
     , bench "bspack long" $ whnf (flip pack 2048)     concatPackerLong
+    ]
+
+benchBase32 =
+    [ bench "bspack 512B" $ whnf (\bs -> pack (putByteStringBase32 bs) 824)      $! B.replicate 512      0x42
+    , bench "bspack 10KB" $ whnf (\bs -> pack (putByteStringBase32 bs) 16000)    $! B.replicate 10000    0x42
+    , bench "bspack 1MB"  $ whnf (\bs -> pack (putByteStringBase32 bs) 1600000)  $! B.replicate 1000000  0x42
+    , bench "bspack 10MB" $ whnf (\bs -> pack (putByteStringBase32 bs) 16000000) $! B.replicate 10000000 0x42
     ]

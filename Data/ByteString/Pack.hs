@@ -17,19 +17,21 @@ module Data.ByteString.Pack
     , pack
       -- * Operations
       -- ** put
+    , putWord8
+    , putWord16
+    , putWord32
     , putStorable
     , putByteString
     , fillList
     , fillUpWith
-    , putWord8
-    , putWord16
-    , putWord32
+      -- *** Encoding
+    , putByteStringBase32
+    , guessEncodedLength
       -- ** skip
     , skip
     , skipStorable
     ) where
 
-import Control.Applicative
 import Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Internal as B
@@ -39,59 +41,8 @@ import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 
--- A little cache to update the data
-data Cache = Cache {-# UNPACK #-} !(Ptr Word8) -- pointer in the bytestring
-                   {-# UNPACK #-} !Int         -- remaining size
-
-instance Show Cache where
-    show (Cache _ l) = show l
-
--- | Packing result:
---
--- * PackerOK a -> means the bytestring has been filled with the given data
--- * PackerMore a cache -> a temporary 
-data Result a =
-      PackerMore a Cache
-    | PackerFail String
-  deriving (Show)
-
--- | Simple Bytestring Packer
-newtype Packer a = Packer { runPacker_ :: Cache -> IO (Result a) }
-
-instance Functor Packer where
-    fmap = fmapPacker
-
-instance Applicative Packer where
-    pure = returnPacker
-    (<*>) = appendPacker
-
-instance Monad Packer where
-    return = returnPacker
-    (>>=) = bindPacker
-
-fmapPacker :: (a -> b) -> Packer a -> Packer b
-fmapPacker f p = Packer $ \cache -> do
-    rv <- runPacker_ p cache
-    return $ case rv of
-        PackerMore v cache' -> PackerMore (f v) cache'
-        PackerFail err      -> PackerFail err
-{-# INLINE fmapPacker #-}
-
-returnPacker :: a -> Packer a
-returnPacker v = Packer $ \cache -> return $ PackerMore v cache
-{-# INLINE returnPacker #-}
-
-bindPacker :: Packer a -> (a -> Packer b) -> Packer b
-bindPacker p fp = Packer $ \cache -> do
-    rv <- runPacker_ p cache
-    case rv of
-        PackerMore v cache' -> runPacker_ (fp v) cache'
-        PackerFail err      -> return $ PackerFail err
-{-# INLINE bindPacker #-}
-
-appendPacker :: Packer (a -> b) -> Packer a -> Packer b
-appendPacker p1f p2 = p1f >>= \p1 -> p2 >>= \v -> return (p1 v)
-{-# INLINE appendPacker #-}
+import Data.ByteString.Pack.Internal
+import Data.ByteString.Pack.Base32
 
 -- | pack the given packer into the given bytestring
 pack :: Packer a -> Int -> Either String ByteString
@@ -103,16 +54,6 @@ pack p len =
         return $ case val of
             PackerMore _ (Cache _ r) -> Right (PS fptr 0 (len - r))
             PackerFail err           -> Left err
-
--- run a sized action
-actionPacker :: Int -> (Ptr Word8 -> IO a) -> Packer a
-actionPacker s action = Packer $ \(Cache ptr size) ->
-    case compare size s of
-        LT -> return $ PackerFail "Not enough space in destination"
-        _  -> do
-            v <- action ptr
-            return $ PackerMore v (Cache (ptr `plusPtr` s) (size - s))
-{-# INLINE actionPacker #-}
 
 fillUpWithWord8' :: Word8 -> Packer ()
 fillUpWithWord8' w = Packer $ \(Cache ptr size) -> do
