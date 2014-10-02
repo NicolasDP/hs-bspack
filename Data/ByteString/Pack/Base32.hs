@@ -28,29 +28,37 @@ import           GHC.Prim
 import           GHC.Types
 import           GHC.Word
 
--- | convert the given bytestring in base 32
-putByteStringBase32 :: ByteString -> Packer ()
-putByteStringBase32 bs
+putByteStringBase32 :: Bool -> ByteString -> Packer ()
+putByteStringBase32 padding bs
     | neededLength == 0 = return ()
-    | otherwise         = actionPacker neededLength (actionPackerEncode32 bs)
+    | otherwise         = actionPackerWithRemain neededLength (actionPackerEncode32 bs)
   where
     sourceLength :: Int
     sourceLength = B.length bs
     neededLength :: Int
     neededLength = guessEncodedLength sourceLength
 
-    actionPackerEncode32 :: ByteString -> Ptr Word8 -> IO ()
-    actionPackerEncode32 (PS srcfptr off _) dstptr = do
-        withForeignPtr srcfptr $ \srcptr ->
-            encode32Ptr (srcptr `plusPtr` off) dstptr sourceLength neededLength (0x00, 0)
+    actionPackerEncode32 :: ByteString -> Ptr Word8 -> Int -> IO (Int, ())
+    actionPackerEncode32 (PS srcfptr off _) dstptr _ =
+        withForeignPtr srcfptr $ \srcptr -> do
+            (ndstptr, remain) <- encode32Ptr (srcptr `plusPtr` off) dstptr sourceLength neededLength (0x00, 0)
+            if padding
+                then B.memset ndstptr 0x3d (fromIntegral remain) >> return (0, ())
+                else return (remain, ())
 
-encode32Ptr :: Ptr Word8 -> Ptr Word8 -> Int -> Int -> (Word8, Int) -> IO ()
+encode32Ptr :: Ptr Word8    -- ^ the source ptr
+            -> Ptr Word8    -- ^ the destination ptr
+            -> Int          -- ^ the source length
+            -> Int          -- ^ the destination length
+            -> (Word8, Int) -- ^ a cache to bufferize the bits before flushing them into dest
+            -> IO (Ptr Word8, Int)
 -- OK: all the bytes have been consumned, the Cache has been flushed
-encode32Ptr _       !dstptr  0  0 (!bits, !size) = void $ flush dstptr (bits, size)
+encode32Ptr _       !dstptr  0  0 (!bits, !size) = do
+    _ <- flush dstptr (bits, size)
+    return (dstptr, 0)
 encode32Ptr _       !dstptr  0 !k (!bits, !size) = do
     _ <- flush dstptr (bits, size)
-    _ <- B.memset (dstptr `plusPtr` 1) 0x3d (fromIntegral $ k - 1)
-    return ()
+    return (dstptr `plusPtr` 1, k - 1)
 -- OK: consume the byte and iterate
 encode32Ptr !srcptr !dstptr !n !k (!bits, !size) = do
     w <- peek srcptr
@@ -62,7 +70,7 @@ encode32Ptr !srcptr !dstptr !n !k (!bits, !size) = do
         4 -> flush dstptr (bufferize w 1 1 (bits, size)) >>= flush (dstptr `plusPtr` 1) . bufferize w 2 6 >>= encodeNext 1 2 . bufferize w 7 8
         _ -> undefined
   where
-    encodeNext :: Int -> Int -> (Word8, Int) -> IO ()
+    encodeNext :: Int -> Int -> (Word8, Int) -> IO (Ptr Word8, Int)
     encodeNext !srcoff !dstoff = encode32Ptr (srcptr `plusPtr` srcoff) (dstptr `plusPtr` dstoff) (n - srcoff) (k - dstoff)
     {-# INLINE encodeNext #-}
                  

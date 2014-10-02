@@ -23,11 +23,13 @@ import Data.Monoid
 import qualified Blaze.ByteString.Builder as Blaze
 import qualified Blaze.ByteString.Builder.Char8 as Blaze
 
+import qualified Codec.Binary.Base32 as C32
+
 main :: IO ()
 main = defaultMain
     [ bgroup "just fill up with the same char" benchFillUpWith
-    , bgroup "write a bytestring" benchWriteByteString
-    , bgroup "write byte and bytestring" benchConcatBytes
+--    , bgroup "write a bytestring" benchWriteByteString
+--    , bgroup "write byte and bytestring" benchConcatBytes
     , bgroup "base32" benchBase32
     ]
 
@@ -79,8 +81,13 @@ benchConcatBytes =
     ]
 
 benchBase32 =
-    [ bench "bspack 512B" $ whnf (\bs -> pack (putByteStringBase32 bs) 824)      $! B.replicate 512      0x42
-    , bench "bspack 10KB" $ whnf (\bs -> pack (putByteStringBase32 bs) 16000)    $! B.replicate 10000    0x42
-    , bench "bspack 1MB"  $ whnf (\bs -> pack (putByteStringBase32 bs) 1600000)  $! B.replicate 1000000  0x42
-    , bench "bspack 10MB" $ whnf (\bs -> pack (putByteStringBase32 bs) 16000000) $! B.replicate 10000000 0x42
+    [ bench "bspack 512B" $ whnf (\bs -> pack (putByteStringBase32 True bs) 824)      $! B.replicate 512      0x42
+    , bench "bspack 10KB" $ whnf (\bs -> pack (putByteStringBase32 True bs) 16000)    $! B.replicate 10000    0x42
+    , bench "bspack 1MB"  $ whnf (\bs -> pack (putByteStringBase32 True bs) 1600000)  $! B.replicate 1000000  0x42
+    , bench "bspack 10MB" $ whnf (\bs -> pack (putByteStringBase32 True bs) 16000000) $! B.replicate 10000000 0x42
+
+    , bench "sandi 512B" $ whnf C32.encode $! B.replicate 512      0x42
+    , bench "sandi 10KB" $ whnf C32.encode $! B.replicate 10000    0x42
+    , bench "sandi 1MB"  $ whnf C32.encode $! B.replicate 1000000  0x42
+    , bench "sandi 10MB" $ whnf C32.encode $! B.replicate 10000000 0x42
     ]

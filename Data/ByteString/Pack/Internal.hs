@@ -12,6 +12,7 @@ module Data.ByteString.Pack.Internal
     , Packer(..)
     , Cache(..)
     , actionPacker
+    , actionPackerWithRemain
     ) where
 
 import Control.Applicative
@@ -72,7 +73,7 @@ appendPacker :: Packer (a -> b) -> Packer a -> Packer b
 appendPacker p1f p2 = p1f >>= \p1 -> p2 >>= \v -> return (p1 v)
 {-# INLINE appendPacker #-}
 
--- run a sized action
+-- | run a sized action
 actionPacker :: Int -> (Ptr Word8 -> IO a) -> Packer a
 actionPacker s action = Packer $ \(Cache ptr size) ->
     case compare size s of
@@ -81,3 +82,15 @@ actionPacker s action = Packer $ \(Cache ptr size) ->
             v <- action ptr
             return $ PackerMore v (Cache (ptr `plusPtr` s) (size - s))
 {-# INLINE actionPacker #-}
+
+-- | run a sized action
+actionPackerWithRemain :: Int -> (Ptr Word8 -> Int -> IO (Int, a)) -> Packer a
+actionPackerWithRemain s action = Packer $ \(Cache ptr size) ->
+    case compare size s of
+        LT -> return $ PackerFail "Not enough space in destination"
+        _  -> do
+            (remain, v) <- action ptr size
+            return $ if remain > s
+                then PackerFail "remaining bytes higher than the destination's size"
+                else PackerMore v (Cache (ptr `plusPtr` (s - remain)) (size - s + remain))
+{-# INLINE actionPackerWithRemain #-}
