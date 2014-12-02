@@ -24,9 +24,6 @@ module Data.ByteString.Pack
     , putByteString
     , fillList
     , fillUpWith
-      -- *** Encoding
-    , putByteStringBase32
-    , guessEncodedLength
       -- ** skip
     , skip
     , skipStorable
@@ -42,7 +39,6 @@ import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 
 import Data.ByteString.Pack.Internal
-import Data.ByteString.Pack.Base32
 
 -- | pack the given packer into the given bytestring
 pack :: Packer a -> Int -> Either String ByteString

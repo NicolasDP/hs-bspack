@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                bspack
-version:             0.0.3
+version:             0.0.4
 synopsis:            A simple and fast bytestring packer
 description:         A simple and fast bytestring packer
 homepage:            https://github.com/NicolasDP/hs-bspack
@@ -17,7 +17,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Data.ByteString.Pack
-                     , Data.ByteString.Pack.Base32
   other-modules:       Data.ByteString.Pack.Internal
   -- other-extensions:    
   build-depends:       base == 4.*
