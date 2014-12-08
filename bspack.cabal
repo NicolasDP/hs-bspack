@@ -35,7 +35,6 @@ Benchmark bench-bspack
                      , criterion
                      , bspack
                      , blaze-builder
-                     , sandi
 
 Test-Suite  tests
   type:                exitcode-stdio-1.0
